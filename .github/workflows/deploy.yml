@@ -53,17 +53,17 @@ jobs:
         scp -i private_key.pem -r build $EC2_USER@$EC2_HOST:~/multi-branch-react/${BRANCH}
 
         # Serve the app using PM2
-        ssh -i private_key.pem $EC2_USER@$EC2_HOST << 'EOF'
-          cd ~/multi-branch-react/${BRANCH}
-          pm2 delete ${BRANCH} || true
-          PORT=$(case "$BRANCH" in
-            main) echo 5173 ;;
-            dev) echo 5174 ;;
-            test) echo 5175 ;;
-            stag) echo 5176 ;;
-          esac)
-          pm2 serve build $PORT --name "${BRANCH}"
-        EOF
+ssh -i private_key.pem $EC2_USER@$EC2_HOST << 'EOF'
+  cd ~/multi-branch-react/${BRANCH}
+  pm2 delete ${BRANCH} || true
+  PORT=$(case "$BRANCH" in
+    main) echo 5173 ;;
+    dev) echo 5174 ;;
+    test) echo 5175 ;;
+    stag) echo 5176 ;;
+  esac)
+  pm2 serve build $PORT --name "${BRANCH}" -f
+EOF
 
         # Cleanup the private key
         rm private_key.pem
