@@ -28,25 +28,36 @@ jobs:
       run: npm run build
 
     - name: Deploy to EC2
-      env:
-        BRANCH: ${{ github.ref_name }}
-        EC2_USER: ubuntu
-        EC2_HOST: ${{ secrets.EC2_HOST }}
-        PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
-      run: |
-        ssh -i "$PRIVATE_KEY" $EC2_USER@$EC2_HOST << 'EOF'
-          # Create branch-specific folder if it doesn't exist
-          mkdir -p ~/multi-branch-react/${BRANCH}
-        EOF
-        scp -i "$PRIVATE_KEY" -r build $EC2_USER@$EC2_HOST:~/multi-branch-react/${BRANCH}
-        ssh -i "$PRIVATE_KEY" $EC2_USER@$EC2_HOST << 'EOF'
-          cd ~/multi-branch-react/${BRANCH}
-          pm2 delete ${BRANCH} || true
-          PORT=$(case "$BRANCH" in
-            main) echo 5173 ;;
-            dev) echo 5174 ;;
-            test) echo 5175 ;;
-            stag) echo 5176 ;;
-          esac)
-          pm2 serve build $PORT --name "${BRANCH}"
-        EOF
+  env:
+    BRANCH: ${{ github.ref_name }}
+    EC2_USER: ubuntu
+    EC2_HOST: ${{ secrets.EC2_HOST }}
+    PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
+  run: |
+    # Write the private key to a temporary file
+    echo "$PRIVATE_KEY" > private_key.pem
+    chmod 600 private_key.pem
+
+    # Add EC2 host to known_hosts to avoid host key verification failure
+    ssh-keyscan -H $EC2_HOST >> ~/.ssh/known_hosts
+
+    # Create branch-specific folder if it doesn't exist
+    ssh -i private_key.pem $EC2_USER@$EC2_HOST << 'EOF'
+      mkdir -p ~/multi-branch-react/${BRANCH}
+    EOF
+
+    # Copy build folder to EC2 instance
+    scp -i private_key.pem -r build $EC2_USER@$EC2_HOST:~/multi-branch-react/${BRANCH}
+
+    # Serve the app using PM2
+    ssh -i private_key.pem $EC2_USER@$EC2_HOST << 'EOF'
+      cd ~/multi-branch-react/${BRANCH}
+      pm2 delete ${BRANCH} || true
+      PORT=$(case "$BRANCH" in
+        main) echo 5173 ;;
+        dev) echo 5174 ;;
+        test) echo 5175 ;;
+        stag) echo 5176 ;;
+      esac)
+      pm2 serve build $PORT --name "${BRANCH}"
+    EOF
