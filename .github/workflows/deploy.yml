@@ -1,0 +1,52 @@
+name: Deploy React App
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+      - test
+      - stag
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: 18
+
+    - name: Install Dependencies
+      run: npm install
+
+    - name: Build React App
+      run: npm run build
+
+    - name: Deploy to EC2
+      env:
+        BRANCH: ${{ github.ref_name }}
+        EC2_USER: ubuntu
+        EC2_HOST: ${{ secrets.EC2_HOST }}
+        PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
+      run: |
+        ssh -i "$PRIVATE_KEY" $EC2_USER@$EC2_HOST << 'EOF'
+          # Create branch-specific folder if it doesn't exist
+          mkdir -p ~/multi-branch-react/${BRANCH}
+        EOF
+        scp -i "$PRIVATE_KEY" -r build $EC2_USER@$EC2_HOST:~/multi-branch-react/${BRANCH}
+        ssh -i "$PRIVATE_KEY" $EC2_USER@$EC2_HOST << 'EOF'
+          cd ~/multi-branch-react/${BRANCH}
+          pm2 delete ${BRANCH} || true
+          PORT=$(case "$BRANCH" in
+            main) echo 5173 ;;
+            dev) echo 5174 ;;
+            test) echo 5175 ;;
+            stag) echo 5176 ;;
+          esac)
+          pm2 serve build $PORT --name "${BRANCH}"
+        EOF
