@@ -88,7 +88,7 @@ jobs:
 
           echo "Starting a new container..."
           for i in {1..3}; do
-            sudo docker run -d --name my-react-app-$BRANCH -p $PORT:80 ${{ secrets.DOCKER_USERNAME }}/my-react-app:$BRANCH && break
+            sudo docker run -d --name my-react-app-$BRANCH -p $PORT:$PORT ${{ secrets.DOCKER_USERNAME }}/my-react-app:$BRANCH && break
             echo "Retrying to start the container..."
             sleep 5
           done
