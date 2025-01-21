@@ -7,7 +7,7 @@ function App() {
       <header className="App-header">
         <img src={logo} className="App-logo" alt="logo" />
         <p>
-          Staging
+          Staging Docker
         </p>
       </header>
     </div>
