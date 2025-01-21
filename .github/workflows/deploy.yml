@@ -13,37 +13,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # Step 1: Checkout Code
     - name: Checkout Code
       uses: actions/checkout@v3
 
-    # Step 2: Set up Node.js
     - name: Set up Node.js
       uses: actions/setup-node@v3
       with:
         node-version: 20
 
-    # Step 3: Install Dependencies and Build App
     - name: Install Dependencies and Build App
       run: |
         npm install
         npm run build
 
-    # Step 4: Build Docker Image
     - name: Build Docker Image
       env:
         BRANCH: ${{ github.ref_name }}
       run: |
         docker build -t my-react-app:${{ github.ref_name }} .
 
-    # Step 5: Log in to Docker Hub (or container registry)
     - name: Log in to Docker Hub
       uses: docker/login-action@v2
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
 
-    # Step 6: Push Docker Image
     - name: Push Docker Image
       env:
         BRANCH: ${{ github.ref_name }}
@@ -51,7 +45,6 @@ jobs:
         docker tag my-react-app:${{ github.ref_name }} ${{ secrets.DOCKER_USERNAME }}/my-react-app:${{ github.ref_name }}
         docker push ${{ secrets.DOCKER_USERNAME }}/my-react-app:${{ github.ref_name }}
 
-    # Step 7: Deploy to EC2
     - name: Deploy Docker Container to EC2
       env:
         BRANCH: ${{ github.ref_name }}
@@ -59,59 +52,46 @@ jobs:
         EC2_HOST: ${{ secrets.EC2_HOST }}
         PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
       run: |
-        # Write the private key to a temporary file
         echo "$PRIVATE_KEY" > private_key.pem
         chmod 600 private_key.pem
 
-        # Ensure the .ssh directory exists
         mkdir -p ~/.ssh
-
-        # Add EC2 host to known_hosts to avoid host key verification failure
         ssh-keyscan -H $EC2_HOST >> ~/.ssh/known_hosts
 
-        # Install Docker if not present, log in, and deploy
         ssh -i private_key.pem $EC2_USER@$EC2_HOST << 'EOF'
-          # Install Docker if not already installed
           if ! command -v docker &> /dev/null; then
-            echo "Docker not found. Installing Docker..."
+            echo "Installing Docker..."
             sudo apt-get update
             sudo apt-get install -y docker.io
             sudo systemctl start docker
             sudo systemctl enable docker
           fi
 
-          # Add user to Docker group to avoid permission issues
-          if ! groups $USER | grep -q docker; then
-            sudo usermod -aG docker $USER
-          fi
-
-          # Determine the port based on the branch
-          BRANCH=${BRANCH:-"main"}  # Default to "main" if BRANCH is not set
+          BRANCH=${BRANCH:-"main"}
           case "$BRANCH" in
             main) PORT=5173 ;;
             dev) PORT=5174 ;;
             test) PORT=5175 ;;
             stag) PORT=5176 ;;
-            *) PORT=5173 ;;  # Default to port 5173 for unrecognized branches
           esac
 
-          # Stop any process using the specified port
+          echo "Checking if port $PORT is in use..."
           if lsof -i:$PORT | grep LISTEN; then
-            echo "Port $PORT is in use. Stopping the process..."
+            echo "Stopping process using port $PORT..."
             sudo fuser -k $PORT/tcp || true
+            sleep 2  # Wait to ensure the port is released
           fi
 
-          # Log in to Docker Hub and deploy
-          sudo docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
-          sudo docker pull ${{ secrets.DOCKER_USERNAME }}/my-react-app:$BRANCH
-          
-          # Stop and remove any existing container with the same name
+          echo "Stopping any existing container on this branch..."
           sudo docker stop my-react-app-$BRANCH || true
           sudo docker rm my-react-app-$BRANCH || true
 
-          # Run the new container
-          sudo docker run -d --name my-react-app-$BRANCH -p $PORT:80 ${{ secrets.DOCKER_USERNAME }}/my-react-app:$BRANCH
+          echo "Starting a new container..."
+          for i in {1..3}; do
+            sudo docker run -d --name my-react-app-$BRANCH -p $PORT:80 ${{ secrets.DOCKER_USERNAME }}/my-react-app:$BRANCH && break
+            echo "Retrying to start the container..."
+            sleep 5
+          done
         EOF
 
-        # Cleanup the private key
         rm private_key.pem
