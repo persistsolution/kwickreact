@@ -1,4 +1,4 @@
-name: Deploy React App
+name: Deploy React App with Docker
 
 on:
   push:
@@ -13,21 +13,46 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    # Step 1: Checkout Code
     - name: Checkout Code
       uses: actions/checkout@v3
 
+    # Step 2: Set up Node.js
     - name: Set up Node.js
       uses: actions/setup-node@v3
       with:
         node-version: 18
 
-    - name: Install Dependencies
-      run: npm install
-
+    # Step 3: Build React App
     - name: Build React App
-      run: npm run build
+      run: |
+        npm install
+        npm run build
 
-    - name: Deploy to EC2
+    # Step 4: Build Docker Image
+    - name: Build Docker Image
+      env:
+        BRANCH: ${{ github.ref_name }}
+      run: |
+        docker build -t my-react-app:${{ github.ref_name }} .
+
+    # Step 5: Log in to Docker Hub (or container registry)
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    # Step 6: Push Docker Image
+    - name: Push Docker Image
+      env:
+        BRANCH: ${{ github.ref_name }}
+      run: |
+        docker tag my-react-app:${{ github.ref_name }} ${{ secrets.DOCKER_USERNAME }}/my-react-app:${{ github.ref_name }}
+        docker push ${{ secrets.DOCKER_USERNAME }}/my-react-app:${{ github.ref_name }}
+
+    # Step 7: Deploy to EC2
+    - name: Deploy Docker Container to EC2
       env:
         BRANCH: ${{ github.ref_name }}
         EC2_USER: ubuntu
@@ -44,26 +69,18 @@ jobs:
         # Add EC2 host to known_hosts to avoid host key verification failure
         ssh-keyscan -H $EC2_HOST >> ~/.ssh/known_hosts
 
-        # Create branch-specific folder if it doesn't exist
+        # Pull the Docker image on the EC2 instance and run the container
         ssh -i private_key.pem $EC2_USER@$EC2_HOST << EOF
-          mkdir -p ~/multi-branch-react/${{ github.ref_name }}
-        EOF
-
-        # Copy build folder to EC2 instance
-        scp -i private_key.pem -r build $EC2_USER@$EC2_HOST:~/multi-branch-react/${{ github.ref_name }}
-
-        # Serve the app using PM2
-        ssh -i private_key.pem $EC2_USER@$EC2_HOST << EOF
-          BRANCH=${{ github.ref_name }}
-          cd ~/multi-branch-react/\$BRANCH
-          pm2 delete \$BRANCH || true
-          PORT=\$(case "\$BRANCH" in
+          docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+          docker pull ${{ secrets.DOCKER_USERNAME }}/my-react-app:${{ github.ref_name }}
+          docker stop my-react-app-${{ github.ref_name }} || true
+          docker rm my-react-app-${{ github.ref_name }} || true
+          docker run -d --name my-react-app-${{ github.ref_name }} -p \$(case "${{ github.ref_name }}" in
             main) echo 5173 ;;
             dev) echo 5174 ;;
             test) echo 5175 ;;
             stag) echo 5176 ;;
-          esac)
-          pm2 serve build \$PORT --name "\$BRANCH" -f
+          esac):80 ${{ secrets.DOCKER_USERNAME }}/my-react-app:${{ github.ref_name }}
         EOF
 
         # Cleanup the private key
