@@ -17,7 +17,7 @@ COPY build/ ./build/
 RUN npm install -g serve
 
 # Expose the application port (default is 5173)
-EXPOSE 5174
+EXPOSE 5175
 
 # Command to serve the app, dynamically using the PORT environment variable
-CMD ["sh", "-c", "serve -s build -l ${PORT:-5174}"]
+CMD ["sh", "-c", "serve -s build -l ${PORT:-5175}"]
