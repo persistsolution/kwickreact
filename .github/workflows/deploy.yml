@@ -17,33 +17,32 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v3
 
-    # Step 2: Set up Node.js
+    # Step 2: Set up Node.js and Build the React App
     - name: Set up Node.js
       uses: actions/setup-node@v3
       with:
-        node-version: 18
+        node-version: 20
 
-    # Step 3: Build React App
-    - name: Build React App
+    - name: Install Dependencies and Build App
       run: |
         npm install
         npm run build
 
-    # Step 4: Build Docker Image
+    # Step 3: Build Docker Image
     - name: Build Docker Image
       env:
         BRANCH: ${{ github.ref_name }}
       run: |
         docker build -t my-react-app:${{ github.ref_name }} .
 
-    # Step 5: Log in to Docker Hub (or container registry)
+    # Step 4: Log in to Docker Hub (or container registry)
     - name: Log in to Docker Hub
       uses: docker/login-action@v2
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
 
-    # Step 6: Push Docker Image
+    # Step 5: Push Docker Image
     - name: Push Docker Image
       env:
         BRANCH: ${{ github.ref_name }}
@@ -51,7 +50,7 @@ jobs:
         docker tag my-react-app:${{ github.ref_name }} ${{ secrets.DOCKER_USERNAME }}/my-react-app:${{ github.ref_name }}
         docker push ${{ secrets.DOCKER_USERNAME }}/my-react-app:${{ github.ref_name }}
 
-    # Step 7: Deploy to EC2
+    # Step 6: Deploy to EC2
     - name: Deploy Docker Container to EC2
       env:
         BRANCH: ${{ github.ref_name }}
@@ -69,8 +68,16 @@ jobs:
         # Add EC2 host to known_hosts to avoid host key verification failure
         ssh-keyscan -H $EC2_HOST >> ~/.ssh/known_hosts
 
-        # Pull the Docker image on the EC2 instance and run the container
+        # Install Docker if not present, log in, and deploy
         ssh -i private_key.pem $EC2_USER@$EC2_HOST << EOF
+          if ! command -v docker &> /dev/null; then
+            echo "Docker not found. Installing Docker..."
+            sudo apt-get update
+            sudo apt-get install -y docker.io
+            sudo systemctl start docker
+            sudo systemctl enable docker
+          fi
+
           docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
           docker pull ${{ secrets.DOCKER_USERNAME }}/my-react-app:${{ github.ref_name }}
           docker stop my-react-app-${{ github.ref_name }} || true
