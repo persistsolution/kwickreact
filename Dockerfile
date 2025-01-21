@@ -7,17 +7,17 @@ WORKDIR /usr/src/app
 # Copy package.json and package-lock.json
 COPY package*.json ./
 
-# Install dependencies
+# Install dependencies using npm
 RUN npm install
 
-# Copy the build files into the container
+# Copy the React build files into the container
 COPY build/ ./build/
 
 # Install a simple HTTP server to serve the app
 RUN npm install -g serve
 
-# Expose the port 5173 (matching your desired configuration)
+# Expose the application port (5173 for React)
 EXPOSE 5173
 
-# Command to serve the app on port 5173
+# Command to serve the app
 CMD ["serve", "-s", "build", "-l", "5173"]
